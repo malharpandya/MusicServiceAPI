@@ -146,6 +146,30 @@ public class ProfileDriverImpl implements ProfileDriver {
 				result = session.run(query,parameters("userName", userName));
 				
 				if(result.hasNext()) {
+					while (result.hasNext()) {
+						Record friend = result.next();
+						String fUserName = friend.get(0).toString().replace("\"", "");
+						
+						StatementResult playlistSongs = session.run("MATCH (p:profile)-[:created]->(pl:playlist)-[:includes]->(s:song)" + " WHERE p.userName = $userName RETURN s.songId", parameters( "userName", fUserName));
+					;
+						if (playlistSongs.hasNext()){
+							ArrayList<String> songsList = new ArrayList<String>();
+							while (playlistSongs.hasNext()) {
+								Record songId = playlistSongs.next();
+								songsList.add(songId.get(0).toString());
+								
+							}
+							friendsSongs.put(fUserName, songsList);
+							
+							
+						} else {
+							friendsSongs.put(fUserName, null);
+						}
+						
+					}
+					songsQuery.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
+					songsQuery.setMessage("OK");
+					songsQuery.setData(friendsSongs);
 				}
 				else {
 					songs.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);

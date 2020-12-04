@@ -57,14 +57,14 @@ public class ProfileController {
 		String fullName = params.get("fullName");
 		String password = params.get("password");
 
-		if (userName == null || fullName == null || password == null) {
+		if(userName == null || fullName == null || password == null) {
 			response.put("message", "Incomplete paramaters provided");
 			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
 		}
 		else {
 			DbQueryStatus profile = profileDriver.createUserProfile(userName, fullName, password);
 			response.put("message", profile.getMessage());
-			response = Utils.setResponseStatus(response, profile.getdbQueryExecResult(), null);
+			response = Utils.setResponseStatus(response, profile.getdbQueryExecResult(), dbQueryStatus.getData());
 		}
 
 		return response;
@@ -80,14 +80,14 @@ public class ProfileController {
 		String username = params.get("userName");
 		String friendUsername = params.get("friendUserName");
 
-		if (username == null || friendUsername == null) {
+		if(username == null || friendUsername == null) {
 			response.put("message", "Incomplete paramaters provided");
 			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
 		}
 		else {
 			DbQueryStatus follow = profileDriver.followProfile(userName, friendUserName);
 			response.put("message", follow.getMessage());
-			response = Utils.setResponseStatus(response, follow.getdbQueryExecResult(), null);
+			response = Utils.setResponseStatus(response, follow.getdbQueryExecResult(), dbQueryStatus.getData());
 		}
 
 		return response;
@@ -107,9 +107,51 @@ public class ProfileController {
 		else {
 			DbQueryStatus songs = profileDriver.getAllSongFriendsLike(userName);
 			
-
-			response.put("message", songs.getMessage());
-			response = Utils.setResponseStatus(response, songs.getdbQueryExecResult(), songs.getData());
+			if(songs.getData() != null) {
+				HashMap<String, ArrayList<String>> friends = (HashMap<String, ArrayList<String>>) songs.getData();
+				HashMap<String, ArrayList<String>> friendsSongTitles = new HashMap<String, ArrayList<String>>();
+				
+				for(Map.Entry<String, ArrayList<String>> friend: friends.entrySet()) {
+					   ArrayList<String> songList = friend.getValue();
+					   ArrayList<String> songTitles = new ArrayList<String>();
+					   
+					   for(String friendSongs: songList){
+							HttpUrl.Builder urlBuilder = HttpUrl.parse("http://localhost:3001" + "/getSongTitleById").newBuilder();
+							urlBuilder.addPathSegment(friendSongs);
+							String url = urlBuilder.build().toString();
+							Request songCheck = new Request.Builder().url(url).method("GET", null).build();	
+							
+							Call call = client.newCall(songCheck);
+							
+							Response responseFromSongMs = null;
+							String friendSongBody;
+						   
+							try{
+								responseFromSongMs = call.execute();
+								friendSongBody = responseFromSongMs.body().string();
+								System.out.println("responseFromSongMs: "+ friendSongBody);
+								Map<String, Object> map =  mapper.readValue(friendSongBody, Map.class);
+								
+								if(map.containsKey("data")) { //see if song was deleted of not in mongo
+									songTitles.add(map.get("data").toString());
+								}
+								else{
+									songTitles.add("song deleted");
+								}
+							}
+							catch (IOException e) {
+							   e.printStackTrace();
+							}	   
+					   }
+					   friendsSongTitles.put(friend.getKey(), songTitles);
+				}
+				songs.setData(friendsSongTitles);
+				response = Utils.setResponseStatus(response, songs.getdbQueryExecResult(), songs.getData());
+			}
+			else {
+				response.put("message", songs.getMessage());
+				response = Utils.setResponseStatus(response, songs.getdbQueryExecResult(), songs.getData());
+			}
 		}
 		return response;
 	}
@@ -125,14 +167,14 @@ public class ProfileController {
 		String username = params.get("userName");
 		String friendUsername = params.get("friendUserName");
 
-		if (username == null || friendUsername == null) {
+		if(username == null || friendUsername == null) {
 			response.put("message", "Incomplete paramaters provided");
 			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
 		}
 		else {
 			DbQueryStatus unfollow = profileDriver.unfollowProfile(userName, friendUserName);
 			response.put("message", unfollow.getMessage());
-			response = Utils.setResponseStatus(response, unfollow.getdbQueryExecResult(), null);
+			response = Utils.setResponseStatus(response, unfollow.getdbQueryExecResult(), dbQueryStatus.getData());
 		}
 
 		return response;
@@ -169,7 +211,7 @@ public class ProfileController {
 			response.put("message", "Incomplete paramaters provided");
 			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
 		}
-		else {
+		else{
 			DbQueryStatus delete = playlistDriver.deleteSongFromDb(songId);
 			response.put("message", delete.getMessage());
 			response = Utils.setResponseStatus(response, delete.getdbQueryExecResult(), null);
