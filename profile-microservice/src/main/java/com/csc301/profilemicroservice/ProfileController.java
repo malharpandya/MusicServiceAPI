@@ -53,7 +53,21 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("POST %s", Utils.getUrl(request)));
 
-		return null;
+		String userName = params.get("userName");
+		String fullName = params.get("fullName");
+		String password = params.get("password");
+
+		if (userName == null || fullName == null || password == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		}
+		else {
+			DbQueryStatus profile = profileDriver.createUserProfile(userName, fullName, password);
+			response.put("message", profile.getMessage());
+			response = Utils.setResponseStatus(response, profile.getdbQueryExecResult(), null);
+		}
+
+		return response;
 	}
 
 	@RequestMapping(value = "/followFriend/{userName}/{friendUserName}", method = RequestMethod.PUT)
@@ -63,7 +77,20 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 		
-		return null;
+		String username = params.get("userName");
+		String friendUsername = params.get("friendUserName");
+
+		if (username == null || friendUsername == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		}
+		else {
+			DbQueryStatus follow = this.profileDriver.followProfile(userName, friendUserName);
+			response.put("message", follow.getMessage());
+			response = Utils.setResponseStatus(response, follow.getdbQueryExecResult(), null);
+		}
+
+		return response;
 	}
 
 	@RequestMapping(value = "/getAllFriendFavouriteSongTitles/{userName}", method = RequestMethod.GET)
