@@ -57,7 +57,7 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 				}
 			} 
 			else {
-				likesong.setMessage("The playlist does not exist in neo4j");
+				likesong.setMessage("The playlist does not exist in mongo");
 				likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 			}
 		}
@@ -66,8 +66,35 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 
 	@Override
 	public DbQueryStatus unlikeSong(String userName, String songId) {
-		
-		return null;
+		DbQueryStatus unlikesong = new DbQueryStatus("", DbQueryExecResult.QUERY_ERROR_GENERIC);
+		try (Session session = ProfileMicroserviceApplication.driver.session()){
+			Map<String,Object> params = new HashMap<>();
+			params.put("userName", userName);
+			params.put("playlistName",userName+"-favourites");
+			StatementResult result = session.run("MATCH (u:profile)-[:created]->(p:playlist)" + " WHERE u.userName = $userName AND p.plName = $playlistName" + " RETURN u.userName", params);
+			
+			if(result.hasNext()) {
+				params.put("songId", songId);
+				result = session.run("MATCH (p:playlist),(s:song)" + " WHERE p.plName = $playlistName AND s.songId = $songId" + " RETURN EXISTS ( (p)-[:includes]->(s))", params);
+				if(result.hasNext()) {
+					Record exists = result.next();
+					if(exists.get(0).toString().equals("FALSE")) {
+						unlikesong.setMessage("You've already unliked this song");
+						unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_GENERIC);
+					}
+					else {
+						session.run("MATCH (p:playlist)-[i:includes]->(s:song) " + "WHERE p.plName = $playlistName AND s.songId = $songId" + " DELETE i", params);
+						unlikesong.setMessage("OK");
+						unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
+					}
+				}
+			} 
+			else {
+				unlikesong.setMessage("The playlist does not exist in the mongo");
+				unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+			}
+		}
+		return unlikesong;
 	}
 
 	@Override

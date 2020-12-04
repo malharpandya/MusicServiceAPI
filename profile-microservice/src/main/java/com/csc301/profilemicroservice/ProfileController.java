@@ -98,6 +98,7 @@ public class ProfileController {
 			HttpServletRequest request) {
 
 		Map<String, Object> response = new HashMap<String, Object>();
+		ObjectMapper mapper = new ObjectMapper();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
 		if(userName == null) {
@@ -185,6 +186,7 @@ public class ProfileController {
 			@PathVariable("songId") String songId, HttpServletRequest request) {
 
 		Map<String, Object> response = new HashMap<String, Object>();
+		ObjectMapper mapper = new ObjectMapper();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
 		if(songId == null || userName == null) {
@@ -242,9 +244,61 @@ public class ProfileController {
 			@PathVariable("songId") String songId, HttpServletRequest request) {
 
 		Map<String, Object> response = new HashMap<String, Object>();
+		ObjectMapper mapper = new ObjectMapper();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
-		return null;
+		if(songId == null || userName == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		} 
+		else {
+			HttpUrl.Builder urlBuilder = HttpUrl.parse("http://localhost:3001" + "/findSongById").newBuilder();
+			urlBuilder.addPathSegment(songId);
+			String url = urlBuilder.build().toString();
+			Request songCheck = new Request.Builder().url(url).method("GET", null).build();
+
+			Call call = client.newCall(songCheck);
+			Response responseFromSongMs = null;
+			String songServiceBody;
+			RequestBody body = RequestBody.create(null, new byte[0]);
+			
+			try{
+				responseFromSongMs = call.execute();
+				songServiceBody = responseFromSongMs.body().string();
+				Map<String, Object> map =  mapper.readValue(songServiceBody, Map.class);
+				
+				if(map.get("data") == null) {
+					response.put("message", "Song does not exist in mongo");
+					response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_NOT_FOUND,null);
+				}
+				else {
+					DbQueryStatus unlike = playlistDriver.unlikeSong(userName, songId);
+					
+					if(unlike.getMessage().equals("OK")) {
+						urlBuilder = HttpUrl.parse("http://localhost:3001" + "/updateSongFavouritesCount").newBuilder();
+						urlBuilder.addPathSegment(songId);
+						urlBuilder.addQueryParameter("shouldDecrement", "true");
+						url = urlBuilder.build().toString();
+						
+						Request unlikeSong = new Request.Builder().url(url).method("PUT", body).build();
+						call = client.newCall(unlikeSong);
+						responseFromSongMs = call.execute();
+						
+						response.put("message", "OK");
+						response = Utils.setResponseStatus(response, unlike.getdbQueryExecResult(), null);
+						
+					} 
+					else {
+						response.put("message", unlike.getMessage());
+						response = Utils.setResponseStatus(response, unlike.getdbQueryExecResult(), null);
+					}		
+				}
+			} 
+			catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		return response;
 	}
 
 	@RequestMapping(value = "/deleteAllSongsFromDb/{songId}", method = RequestMethod.PUT)
