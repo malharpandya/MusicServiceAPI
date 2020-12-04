@@ -17,7 +17,7 @@ public class Utils {
 		String requestUrl = req.getRequestURL().toString();
 		String queryString = req.getQueryString();
 
-		if (queryString != null) {
+		if(queryString != null) {
 			requestUrl += "?" + queryString;
 		}
 		return requestUrl;
@@ -28,7 +28,7 @@ public class Utils {
 		switch (dbQueryExecResult) {
 		case QUERY_OK:
 			response.put("status", HttpStatus.OK);
-			if (data != null) {
+			if(data != null) {
 				response.put("data", data);
 			}
 			break;

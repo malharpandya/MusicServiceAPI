@@ -14,8 +14,8 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 	public static void InitPlaylistDb() {
 		String queryStr;
 
-		try (Session session = ProfileMicroserviceApplication.driver.session()) {
-			try (Transaction trans = session.beginTransaction()) {
+		try(Session session = ProfileMicroserviceApplication.driver.session()) {
+			try(Transaction trans = session.beginTransaction()) {
 				queryStr = "CREATE CONSTRAINT ON (nPlaylist:playlist) ASSERT exists(nPlaylist.plName)";
 				trans.run(queryStr);
 				trans.success();
@@ -26,8 +26,42 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 
 	@Override
 	public DbQueryStatus likeSong(String userName, String songId) {
+		DbQueryStatus likesong = new DbQueryStatus("", DbQueryExecResult.QUERY_ERROR_GENERIC);
+		
+		try(Session session = ProfileMicroserviceApplication.driver.session()){
+			Map<String,Object> params = new HashMap<>();
+			params.put("userName", userName);
+			params.put("playlistName", userName+"-favourites");
+			StatementResult result = session.run( "MATCH (u:profile)-[:created]->(p:playlist)" + " WHERE u.userName = $userName AND p.plName = $playlistName" + " RETURN u.userName", params);
+			
+			if(result.hasNext()) {
+				result = session.run("MERGE (s:song {songId: $songId})", parameters( "songId", songId));
+				params.put("songId", songId);
 
-		return null;
+				result = session.run("MATCH (p:playlist),(s:song)" + " WHERE p.plName = $playlistName AND s.songId = $songId" + " RETURN EXISTS ( (p)-[:includes]->(s))", params);
+				
+				if(result.hasNext()) {
+					Record exists = result.next();
+					System.out.println(exists.get(0).toString());
+					
+					if(exists.get(0).toString().equals("FALSE")) {
+						session.run("MATCH (p:playlist),(s:song)"
+						+ " WHERE p.plName = $playlistName AND s.songId = $songId" + " MERGE (p)-[:includes]->(s)", params);
+						likesong.setMessage("You've successfully liked this song");
+						likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
+					} 
+					else {
+						likesong.setMessage("OK"); 
+						likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
+					}				
+				}
+			} 
+			else {
+				likesong.setMessage("The playlist does not exist in neo4j");
+				likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+			}
+		}
+		return likesong;
 	}
 
 	@Override
@@ -50,7 +84,7 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 				if(result.hasNext()) {
 					Record record = result.next();
 					
-					if (record.get(0).toString().equals("FALSE")) {
+					if(record.get(0).toString().equals("FALSE")) {
 						deleteSong.setMessage("Song does not exist in playlist.");
 						deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 					} 
@@ -59,14 +93,12 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 						deleteSong.setMessage("OK");
 						deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
 					}
-				}	
-				
+				}
 			}
 			else {
 				deleteSong.setMessage("Song doesn't exist in neo4j");
 				deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 			}
-		
 		}	
 		return deleteSong;
 	}

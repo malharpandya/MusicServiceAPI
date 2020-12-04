@@ -54,7 +54,7 @@ public class ProfileDriverImpl implements ProfileDriver {
 				params.put("userName", userName);
 				params.put("fullName", fullName);
 				params.put("password", password);
-				params.put("plName", "favourites");
+				params.put("plName", userName+"-favourites");
 				query = "CREATE (nProfile:profile {userName: $userName, fullName: $fullName, password: $password})" + "-[:created]-> (nPlaylist:playlist {plName: $plName})";
 				session.run(query, params);
 				profileObj.setMessage("OK");
@@ -152,7 +152,7 @@ public class ProfileDriverImpl implements ProfileDriver {
 						
 						StatementResult playlistSongs = session.run("MATCH (p:profile)-[:created]->(pl:playlist)-[:includes]->(s:song)" + " WHERE p.userName = $userName RETURN s.songId", parameters( "userName", fUserName));
 					;
-						if (playlistSongs.hasNext()){
+						if(playlistSongs.hasNext()){
 							ArrayList<String> songsList = new ArrayList<String>();
 							while (playlistSongs.hasNext()) {
 								Record songId = playlistSongs.next();
@@ -162,7 +162,8 @@ public class ProfileDriverImpl implements ProfileDriver {
 							friendsSongs.put(fUserName, songsList);
 							
 							
-						} else {
+						}
+						else {
 							friendsSongs.put(fUserName, null);
 						}
 						

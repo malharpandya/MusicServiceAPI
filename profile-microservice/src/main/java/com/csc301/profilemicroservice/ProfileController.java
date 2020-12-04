@@ -187,7 +187,54 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
-		return null;
+		if(songId == null || userName == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		} 
+		else {
+			HttpUrl.Builder urlBuilder = HttpUrl.parse("http://localhost:3001" + "/findSongById").newBuilder();
+			urlBuilder.addPathSegment(songId);
+			String url = urlBuilder.build().toString();
+			RequestBody body = RequestBody.create(null, new byte[0]);
+			Request songCheck = new Request.Builder().url(url).method("GET", null).build();	
+			
+			Call call = client.newCall(songCheck);
+			Response responseFromSongMs = null;
+			String songServiceBody;
+			try{
+				responseFromSongMs = call.execute();
+				songServiceBody = responseFromSongMs.body().string();
+				Map<String, Object> map =  mapper.readValue(songServiceBody, Map.class);
+				if(map.get("data") == null) {
+					response.put("message", "Song doesn't exist in mongo");
+					response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_NOT_FOUND,null);
+				
+				}
+				else {
+					DbQueryStatus like = playlistDriver.likeSong(userName, songId);
+					if(like.getMessage().equals("OK")) {
+						urlBuilder = HttpUrl.parse("http://localhost:3001" + "/updateSongFavouritesCount").newBuilder();
+						urlBuilder.addPathSegment(songId);
+						urlBuilder.addQueryParameter("shouldDecrement", "false");
+						url = urlBuilder.build().toString();
+							
+						Request likeSong = new Request.Builder().url(url).method("PUT", body).build();
+						call = client.newCall(likeSong);
+						responseFromSongMs = call.execute();
+						response.put("message", "OK");
+						response = Utils.setResponseStatus(response, like.getdbQueryExecResult(), null);
+					}
+					else {
+						response.put("message", like.getMessage());
+						response = Utils.setResponseStatus(response, like.getdbQueryExecResult(), null);
+					}	
+				}
+			} 
+			catch (IOException e) {
+				e.printStackTrace();
+			}	
+		}
+		return response;
 	}
 
 	@RequestMapping(value = "/unlikeSong/{userName}/{songId}", method = RequestMethod.PUT)
