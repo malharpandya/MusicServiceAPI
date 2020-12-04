@@ -85,7 +85,7 @@ public class ProfileController {
 			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
 		}
 		else {
-			DbQueryStatus follow = this.profileDriver.followProfile(userName, friendUserName);
+			DbQueryStatus follow = profileDriver.followProfile(userName, friendUserName);
 			response.put("message", follow.getMessage());
 			response = Utils.setResponseStatus(response, follow.getdbQueryExecResult(), null);
 		}
@@ -100,7 +100,18 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
-		return null;
+		if(userName == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		}
+		else {
+			DbQueryStatus songs = profileDriver.getAllSongFriendsLike(userName);
+			
+
+			response.put("message", songs.getMessage());
+			response = Utils.setResponseStatus(response, songs.getdbQueryExecResult(), songs.getData());
+		}
+		return response;
 	}
 
 
@@ -111,7 +122,20 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
-		return null;
+		String username = params.get("userName");
+		String friendUsername = params.get("friendUserName");
+
+		if (username == null || friendUsername == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		}
+		else {
+			DbQueryStatus unfollow = profileDriver.unfollowProfile(userName, friendUserName);
+			response.put("message", unfollow.getMessage());
+			response = Utils.setResponseStatus(response, unfollow.getdbQueryExecResult(), null);
+		}
+
+		return response;
 	}
 
 	@RequestMapping(value = "/likeSong/{userName}/{songId}", method = RequestMethod.PUT)
@@ -141,6 +165,15 @@ public class ProfileController {
 		Map<String, Object> response = new HashMap<String, Object>();
 		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 		
-		return null;
+		if(songId == null) {
+			response.put("message", "Incomplete paramaters provided");
+			response = Utils.setResponseStatus(response, DbQueryExecResult.QUERY_ERROR_GENERIC, null);
+		}
+		else {
+			DbQueryStatus delete = playlistDriver.deleteSongFromDb(songId);
+			response.put("message", delete.getMessage());
+			response = Utils.setResponseStatus(response, delete.getdbQueryExecResult(), null);
+		}
+	return response;
 	}
 }
