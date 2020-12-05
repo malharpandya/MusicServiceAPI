@@ -115,18 +115,18 @@ public class ProfileController {
 				        	
 				        	String requestBody = getResponse.body().string();
 				        	JSONObject requestJson = new JSONObject(requestBody);
-							 if (! requestJson.get("status").equals(HttpStatus.OK)) {
-								 response.put("message", "internal server error in song microservice");
+							 if (! requestJson.get("status").equals("OK")) {
+								 response.put("message", "internal server error");
 								 response.put("status", HttpStatus.INTERNAL_SERVER_ERROR);
 								 return response;
 							 }
+							 songName.add((String) requestJson.get("data"));
 						} catch (Exception e) {
 							response.put("message", "error communicating with song microservice");
 							response.put("status", HttpStatus.INTERNAL_SERVER_ERROR);
 							return response;
 						}
 					}
-					
 					friendsSongs.put(name, songName);
 				}
 				response.put("message", dbQueryStatus.getMessage());
@@ -180,7 +180,7 @@ public class ProfileController {
 			try (Response getResponse = this.client.newCall(getRequest).execute()){
 				String requestBody = getResponse.body().string();
 	        	JSONObject requestJson = new JSONObject(requestBody);
-				 if (! requestJson.get("status").equals(HttpStatus.OK)) {
+				 if (! requestJson.get("status").equals("OK")) {
 					 response.put("message", "song not found");
 					 response.put("status", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 					 return response;
@@ -192,7 +192,7 @@ public class ProfileController {
 			}
 			
 			DbQueryStatus dbQueryStatus = playlistDriver.likeSong(userName, songId);
-			if(dbQueryStatus.getdbQueryExecResult().equals(DbQueryExecResult.QUERY_OK)) {
+			if(!dbQueryStatus.getMessage().equals("song already in playlist")) {
 				
 				Request sendRequest = new Request.Builder().url("http://localhost:3001/updateSongFavouritesCount/"+songId+"?shouldDecrement=false").put(new FormBody.Builder().build()).build();
 				try (Response sentReq = this.client.newCall(sendRequest).execute()){
@@ -233,7 +233,7 @@ public class ProfileController {
 			try (Response getResponse = this.client.newCall(getRequest).execute()){
 				String requestBody = getResponse.body().string();
 	        	JSONObject requestJson = new JSONObject(requestBody);
-				 if (! requestJson.get("status").equals(HttpStatus.OK)) {
+				 if (! requestJson.get("status").equals("OK")) {
 					 response.put("message", "song not found");
 					 response.put("status", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 					 return response;

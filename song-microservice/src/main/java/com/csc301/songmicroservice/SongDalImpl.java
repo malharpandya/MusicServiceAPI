@@ -103,6 +103,9 @@ public class SongDalImpl implements SongDal {
 				DbQueryStatus dbQueryStatus = new DbQueryStatus("song not found", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 				return dbQueryStatus;
 			} else {
+				if (song.getSongAmountFavourites() == 0 && shouldDecrement) {
+					return new DbQueryStatus("Cannot have negative counter", DbQueryExecResult.QUERY_ERROR_GENERIC);
+				}
 				if (shouldDecrement) {
 					Update update = new Update().set("songAmountFavourites", song.getSongAmountFavourites() - 1);
 					db.findAndModify(query, update, Song.class);

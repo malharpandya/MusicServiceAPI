@@ -10,8 +10,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -84,7 +82,7 @@ public class SongController {
 			
 			try (Response sentResponse = this.client.newCall(sendRequest).execute()){
 				 JSONObject responseJson = new JSONObject(sentResponse.body().string());
-				 if (! responseJson.get("status").equals(HttpStatus.OK)) {
+				 if (! responseJson.get("status").equals("OK")) {
 					 response.put("message", "could not delete songs from favourites");
 					 response.put("status", HttpStatus.INTERNAL_SERVER_ERROR);
 					 return response;
@@ -114,7 +112,7 @@ public class SongController {
 		String artist_name = params.get(Song.KEY_SONG_ARTIST_FULL_NAME);
 		String album_name = params.get(Song.KEY_SONG_ALBUM);
 		
-		if (song_name == null || song_name.isBlank() || artist_name == null || artist_name.isBlank() || album_name == null || album_name.isBlank()) {
+		if (song_name == null || artist_name == null || album_name == null) {
 			response.put("message", "missing/empty parameter");
 			response.put("status", "QUERY_INCORRECT");
 		} else {
@@ -132,7 +130,7 @@ public class SongController {
 			@RequestParam("shouldDecrement") String shouldDecrement, HttpServletRequest request) {
 
 		Map<String, Object> response = new HashMap<String, Object>();
-		response.put("data", String.format("PUT %s", Utils.getUrl(request)));
+		response.put("path", String.format("PUT %s", Utils.getUrl(request)));
 
 		if (shouldDecrement.equals("true")){
 			DbQueryStatus dbQueryStatus = songDal.updateSongFavouritesCount(songId, true);
