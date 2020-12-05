@@ -26,107 +26,113 @@ public class PlaylistDriverImpl implements PlaylistDriver {
 
 	@Override
 	public DbQueryStatus likeSong(String userName, String songId) {
-		DbQueryStatus likesong = new DbQueryStatus("", DbQueryExecResult.QUERY_ERROR_GENERIC);
 		
-		try(Session session = ProfileMicroserviceApplication.driver.session()){
-			Map<String,Object> params = new HashMap<>();
-			params.put("userName", userName);
-			params.put("playlistName", userName+"-favourites");
-			StatementResult result = session.run( "MATCH (u:profile)-[:created]->(p:playlist)" + " WHERE u.userName = $userName AND p.plName = $playlistName" + " RETURN u.userName", params);
-			
-			if(result.hasNext()) {
-				result = session.run("MERGE (s:song {songId: $songId})", parameters( "songId", songId));
-				params.put("songId", songId);
-
-				result = session.run("MATCH (p:playlist),(s:song)" + " WHERE p.plName = $playlistName AND s.songId = $songId" + " RETURN EXISTS ( (p)-[:includes]->(s))", params);
+		StatementResult result = null;
+		StatementResult exists = null;	
+		DbQueryStatus dbQueryStatus = null;
+		
+		try (Session session = driver.session()) {
+			try (Transaction trans = session.beginTransaction()) {
+				String userExistsQuery = "MATCH (pl:playlist {plName: \"" + userName + "-favourites\" }) RETURN pl";
+				result = trans.run(userExistsQuery);
 				
-				if(result.hasNext()) {
-					Record exists = result.next();
-					System.out.println(exists.get(0).toString());
+				if (!result.hasNext()) {
+					dbQueryStatus = new DbQueryStatus("User not found", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+					trans.failure();
+				} else {
+					String message = "added song to playlist";
 					
-					if(exists.get(0).toString().equals("FALSE")) {
-						session.run("MATCH (p:playlist),(s:song)"
-						+ " WHERE p.plName = $playlistName AND s.songId = $songId" + " MERGE (p)-[:includes]->(s)", params);
-						likesong.setMessage("You've successfully liked this song");
-						likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					} 
-					else {
-						likesong.setMessage("OK"); 
-						likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					}				
+					String existsQuery = "MATCH (pl:playlist {plName: \"" + userName + "-favourites\" }), (s:song {songId: \"" + songId + "\" }) \n" +
+							"MATCH (pl)-[r:includes]-(s) \n" +
+							"RETURN r";
+					
+					
+					exists = trans.run(existsQuery);
+					
+					if(exists.hasNext()) {
+					    message = "song already in playlist";
+					    dbQueryStatus = new DbQueryStatus(message, DbQueryExecResult.QUERY_OK);
+	                    trans.success();
+	                    return dbQueryStatus;
+					}
+					
+					String query = "MATCH (pl:playlist {plName: \"" + userName + "-favourites\" }) \n" +
+							"MERGE (s:song {songId: \"" + songId + "\" }) \n" + 
+							"MERGE (pl)-[r:includes]->(s)\n" +
+							"RETURN r";
+					
+					trans.run(query);
+					
+					dbQueryStatus = new DbQueryStatus(message, DbQueryExecResult.QUERY_OK);
+					trans.success();
 				}
-			} 
-			else {
-				likesong.setMessage("The playlist does not exist in mongo");
-				likesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 			}
+			
+			session.close();
 		}
-		return likesong;
+		
+		return dbQueryStatus;
 	}
 
 	@Override
 	public DbQueryStatus unlikeSong(String userName, String songId) {
-		DbQueryStatus unlikesong = new DbQueryStatus("", DbQueryExecResult.QUERY_ERROR_GENERIC);
-		try (Session session = ProfileMicroserviceApplication.driver.session()){
-			Map<String,Object> params = new HashMap<>();
-			params.put("userName", userName);
-			params.put("playlistName",userName+"-favourites");
-			StatementResult result = session.run("MATCH (u:profile)-[:created]->(p:playlist)" + " WHERE u.userName = $userName AND p.plName = $playlistName" + " RETURN u.userName", params);
-			
-			if(result.hasNext()) {
-				params.put("songId", songId);
-				result = session.run("MATCH (p:playlist),(s:song)" + " WHERE p.plName = $playlistName AND s.songId = $songId" + " RETURN EXISTS ( (p)-[:includes]->(s))", params);
-				if(result.hasNext()) {
-					Record exists = result.next();
-					if(exists.get(0).toString().equals("FALSE")) {
-						unlikesong.setMessage("You've already unliked this song");
-						unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_GENERIC);
+		
+		StatementResult exists = null;
+		
+		DbQueryStatus dbQueryStatus = null;
+		
+		try (Session session = driver.session()) {			
+			try (Transaction trans = session.beginTransaction()) {				
+				String existsQuery = "MATCH (p:profile {userName: \"" + userName + "\"}) RETURN p";
+				
+				exists = trans.run(existsQuery);
+				if (exists.hasNext()) {
+					String checkSong = "MATCH (pl:playlist {plName: \"" + userName + "-favourites\" }), (pl)-[r:includes]->(:song {songId: \"" + songId + "\" })\n" + "RETURN r";
+					String query = "MATCH (pl:playlist {plName: \"" + userName + "-favourites\" }), (pl)-[r:includes]->(:song {songId: \"" + songId + "\" })\n" +
+							"DELETE r";
+					
+					exists = trans.run(checkSong);
+					
+					if(!exists.hasNext()) {
+					    dbQueryStatus = new DbQueryStatus("Song is not in playlist", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+	                    trans.failure();
+	                    return dbQueryStatus;
 					}
-					else {
-						session.run("MATCH (p:playlist)-[i:includes]->(s:song) " + "WHERE p.plName = $playlistName AND s.songId = $songId" + " DELETE i", params);
-						unlikesong.setMessage("OK");
-						unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					}
+					
+					exists = trans.run(query);
+					
+					dbQueryStatus = new DbQueryStatus("Removed song from playlist", DbQueryExecResult.QUERY_OK);
+					trans.success();
+				} else {
+					dbQueryStatus = new DbQueryStatus("no such user found", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+					trans.failure();
 				}
-			} 
-			else {
-				unlikesong.setMessage("The playlist does not exist in the mongo");
-				unlikesong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
 			}
+			session.close();
 		}
-		return unlikesong;
+		return dbQueryStatus;
 	}
 
 	@Override
 	public DbQueryStatus deleteSongFromDb(String songId) {
-		DbQueryStatus deleteSong = new DbQueryStatus("", DbQueryExecResult.QUERY_ERROR_GENERIC);
+		
+		
+		DbQueryStatus dbQueryStatus = null;
+		
+		
+		try (Session session = driver.session()) {
+			try (Transaction trans = session.beginTransaction()) {
+				
+				String existsQuery = "MATCH (s:song {songId: \"" + songId + "\"}) RETURN s";
+				trans.run(existsQuery);
+				String query = "MATCH (s:song {songId: \"" + songId + "\"}) DETACH DELETE s";
+				trans.run(query);
 
-		try(Session session = ProfileMicroserviceApplication.driver.session()){
-			String query = "MATCH (s:song) WHERE s.songId = $songId RETURN s.songId";
-			StatementResult result = session.run(query,parameters( "songId", songId));
-
-			if(result.hasNext()) {
-				result = session.run("MATCH (s:song) WHERE s.songId = $songId" + " RETURN EXISTS ((:playlist)-[:includes]->(s))", parameters( "songId", songId));
-
-				if(result.hasNext()) {
-					Record record = result.next();
-					
-					if(record.get(0).toString().equals("FALSE")) {
-						deleteSong.setMessage("Song does not exist in playlist.");
-						deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-					} 
-					else {
-						session.run("MATCH (s:song) WHERE s.songId = $songId DETACH DELETE s", parameters( "songId", songId));
-						deleteSong.setMessage("OK");
-						deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					}
-				}
+				dbQueryStatus = new DbQueryStatus("Deleted song from database", DbQueryExecResult.QUERY_OK);
+				trans.success();
 			}
-			else {
-				deleteSong.setMessage("Song doesn't exist in neo4j");
-				deleteSong.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-			}
-		}	
-		return deleteSong;
+			session.close();
+		}
+		return dbQueryStatus;
 	}
 }
