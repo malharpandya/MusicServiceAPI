@@ -40,148 +40,156 @@ public class ProfileDriverImpl implements ProfileDriver {
 	
 	@Override
 	public DbQueryStatus createUserProfile(String userName, String fullName, String password) {
-		DbQueryStatus profileObj = new DbQueryStatus("", DbQueryExecResult.QUERY_OK);
-		try(Session session = ProfileMicroserviceApplication.driver.session()) {
-			String query = "MATCH (p:profile) WHERE p.userName = $userName RETURN p.userName";
-			StatementResult result = session.run(query, parameters("userName", userName));
-			
-			if(result.hasNext()) {
-				profileObj.setMessage("Profile already exists");
-				profileObj.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_GENERIC);
+		
+		StatementResult exists = null;
+		DbQueryStatus dbQueryStatus = null;
+		
+		try (Session session = driver.session()) {			
+			try (Transaction trans = session.beginTransaction()) {
+				String existsQuery = "MATCH (p:profile {userName: \"" + userName + "\"}) RETURN p";
+				exists = trans.run(existsQuery);
+				
+				if (exists.hasNext()) {
+					dbQueryStatus = new DbQueryStatus("User Profile already exists", DbQueryExecResult.QUERY_ERROR_GENERIC);
+					trans.failure();
+					return dbQueryStatus;
+				}
+				
+				String query = "MERGE (a:profile {userName: \"" + userName + "\", fullName: \"" + fullName + "\", password: \"" + password + "\" })\n" +
+						"MERGE (b:playlist {plName: \"" + userName + "-favourites\" })\n" +
+						"CREATE (a)-[:created]->(b)\n" +
+								"RETURN a,b ";
+				trans.run(query);
+				dbQueryStatus = new DbQueryStatus("Profile created", DbQueryExecResult.QUERY_OK);
+				trans.success();
 			}
-			else {
-				Map<String,Object> params = new HashMap<>();
-				params.put("userName", userName);
-				params.put("fullName", fullName);
-				params.put("password", password);
-				params.put("plName", userName+"-favourites");
-				query = "CREATE (nProfile:profile {userName: $userName, fullName: $fullName, password: $password})" + "-[:created]-> (nPlaylist:playlist {plName: $plName})";
-				session.run(query, params);
-				profileObj.setMessage("OK");
-				profileObj.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-			}		
+			session.close();
 		}
-		return profileObj;
+		return dbQueryStatus;
 	}
 
 	@Override
 	public DbQueryStatus followFriend(String userName, String frndUserName) {
-		DbQueryStatus friend = new DbQueryStatus("". DbQueryExecResult.QUERY_OK);
-		try(Session session = ProfileMicroserviceApplication.driver.session()) {
-			Map<String,Object> params = new HashMap<>();
-			params.put("userName", userName);
-			params.put("frndUserName", frndUserName);
-			String query = "MATCH (uProfile:profile),(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " RETURN uProfile.userName";
-			StatementResult result = session.run(query, params);
-			
-			if(result.hasNext()) { 
-				result = session.run("MATCH (uProfile:profile),(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " RETURN EXISTS ((uProfile)-[:follows]->(fProfile))", params);
+		
+		StatementResult exists = null;
+		DbQueryStatus dbQueryStatus = null;
+		
+		try (Session session = driver.session()) {			
+			try (Transaction trans = session.beginTransaction()) {
+				String checkUser = "MATCH (p:profile {userName: \"" + userName + "\"}) RETURN p";
+				 String checkfriend = "MATCH (p:profile {userName: \"" + frndUserName + "\"}) RETURN p";
+				exists = trans.run(checkUser);
+				List<Record> recordUser = exists.list();
+				exists = trans.run(checkfriend);
+				List<Record> recordFriend = exists.list();
 				
-				if(result.hasNext()) {
-					Record record = result.next();
-					if(record.get(0).toString().equals("FALSE")){ 
-						session.run("MATCH (uProfile:profile),(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " MERGE (uProfile)-[:follows]->(fProfile)", params);
-						friend.setMessage("OK");
-						friend.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					}
-					else {
-						friend.setMessage("Already following.");
-						friend.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_GENERIC);
-					}
+				if (recordUser.isEmpty() || recordFriend.isEmpty()) {
+                    dbQueryStatus = new DbQueryStatus("User/Friend does not exist", DbQueryExecResult.QUERY_ERROR_GENERIC);
+                    trans.failure();
+                    return dbQueryStatus;
+                }
+				
+				String existsQuery = "MATCH (a:profile), (b:profile) WHERE a.userName = \"" + userName +  "\" AND b.userName = \"" + frndUserName + "\" \n" +
+						"MATCH (a)-[f:follows]->(b) \n" + "RETURN f";
+				
+				exists = trans.run(existsQuery);
+				
+				if (exists.hasNext()) {
+					dbQueryStatus = new DbQueryStatus(userName + " is already following " + frndUserName, DbQueryExecResult.QUERY_ERROR_GENERIC);
+					trans.failure();
+					return dbQueryStatus;
 				}
+				
+				String query = "MATCH (a:profile), (b:profile) WHERE a.userName = \"" + userName +  "\" AND b.userName = \"" + frndUserName + "\" \n" +
+						"CREATE (a)-[:follows]->(b) \n" + "RETURN a,b";
+				
+				trans.run(query);
+				dbQueryStatus = new DbQueryStatus(userName + " is now following " + frndUserName, DbQueryExecResult.QUERY_OK);
+				trans.success();
 			}
-			else {
-				friend.setMessage("Relationship does not exist.");
-				friend.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-			}	
+			session.close();
 		}
-		return friend;
+		return dbQueryStatus;
 	}
 
 	@Override
 	public DbQueryStatus unfollowFriend(String userName, String frndUserName) {
-		DbQueryStatus unfriend = new DbQueryStatus("". DbQueryExecResult.QUERY_OK);
-		try(Session session = ProfileMicroserviceApplication.driver.session()) {
-			Map<String,Object> params = new HashMap<>();
-			params.put("userName", userName);
-			params.put("frndUserName", frndUserName);
-			String query = "MATCH (uProfile:profile),(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " RETURN uProfile.userName";
-			
-			StatementResult result = session.run(query, params);
-			
-			if(result.hasNext()) { 
-				result = session.run("MATCH (uProfile:profile)-[f:follows]->(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " RETURN EXISTS ((uProfile)-[:follows]->(fProfile))", params);
-				
-				if(result.hasNext()) {
-					Record record = result.next();
-					if(record.get(0).toString().equals("FALSE")){ 
-						unfriend.setMessage("Already Unfollowed");
-						unfriend.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_GENERIC);
-					}
-					else {
-						session.run("MATCH (uProfile:profile)-[f:follows]->(fProfile:profile) " + "WHERE uProfile.userName = $userName AND fProfile.userName = $frndUserName" + " DELETE f", params);
-						unfriend.setMessage("OK");
-						unfriend.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					}
+		
+		StatementResult exists = null;
+		DbQueryStatus dbQueryStatus = null;
+		
+		try (Session session = driver.session()) {			
+			try (Transaction trans = session.beginTransaction()) {
+				String existsQuery = "MATCH (a:profile), (b:profile) WHERE a.userName = \"" + userName +  "\" AND b.userName = \"" + frndUserName + "\" \n" +
+						"MATCH (a)-[f:follows]->(b) \n" + "RETURN f";
+				exists = trans.run(existsQuery);
+				if (exists.hasNext()) {
+					
+					String deleteQuery = "MATCH (a:profile), (b:profile) WHERE a.userName = \"" + userName +  "\" AND b.userName = \"" + frndUserName + "\" \n" +
+							"MATCH (a)-[f:follows]->(b) \n" + "DELETE f";
+					
+					trans.run(deleteQuery);
+					dbQueryStatus = new DbQueryStatus("Friend unfollowed", DbQueryExecResult.QUERY_OK);
+					trans.success();
+				} else {
+					dbQueryStatus = new DbQueryStatus("Not followinig friend", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+					trans.failure();
 				}
 			}
-			else {
-				unfriend.setMessage("Relationship does not exist.");
-				unfriend.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-			}	
+			session.close();
 		}
-		return unfriend;
+		return dbQueryStatus;
 	}
 
 	@Override
 	public DbQueryStatus getAllSongFriendsLike(String userName) {
-		DbQueryStatus songs = new DbQueryStatus("". DbQueryExecResult.QUERY_OK);
 		
-		try(Session session = ProfileMicroserviceApplication.driver.session()){
-			String query =  "MATCH (p:profile) WHERE p.userName = $userName RETURN p.userName";
-			StatementResult result = session.run(query, parameters("userName", userName));
-
-			if(result.hasNext()) {
-				query = "MATCH (p:profile)-[f:follows]->(friends:profile) WHERE p.userName = $userName RETURN friends.userName";
-				result = session.run(query,parameters("userName", userName));
+		StatementResult exists = null;
+		DbQueryStatus dbQueryStatus = null;
+		StatementResult allFriends = null;
+		
+		try (Session session = driver.session()) {			
+			try (Transaction trans = session.beginTransaction()) {
+				String existsQuery = "MATCH (p:profile {userName: \"" + userName + "\"}) RETURN p";
+				exists = trans.run(existsQuery);
+				if(!exists.hasNext()) {
+                    trans.failure();
+                    session.close();
+                    return new DbQueryStatus("User does not exist", DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
+                }
 				
-				if(result.hasNext()) {
-					while (result.hasNext()) {
-						Record friend = result.next();
-						String fUserName = friend.get(0).toString().replace("\"", "");
-						
-						StatementResult playlistSongs = session.run("MATCH (p:profile)-[:created]->(pl:playlist)-[:includes]->(s:song)" + " WHERE p.userName = $userName RETURN s.songId", parameters( "userName", fUserName));
-					;
-						if(playlistSongs.hasNext()){
-							ArrayList<String> songsList = new ArrayList<String>();
-							while (playlistSongs.hasNext()) {
-								Record songId = playlistSongs.next();
-								songsList.add(songId.get(0).toString());
-								
-							}
-							friendsSongs.put(fUserName, songsList);
-							
-							
-						}
-						else {
-							friendsSongs.put(fUserName, null);
-						}
-						
+				String allFriendsQuery = "MATCH (p:profile),(nProfile:profile) WHERE p.userName = \"" + userName + "\" \n" +
+						"AND (p)-[:follows]->(nProfile) \n" +
+						"RETURN nProfile";
+				
+				allFriends = trans.run(allFriendsQuery);
+				Map<String, List<String>> allSongsFriendsLike = new HashMap<String, List<String>>();
+				List<Record> allFriendsRecords = allFriends.list();
+				List<String> allFriendsNames = new ArrayList<String>();
+				StatementResult songsResult;
+				for (Record record : allFriendsRecords) {
+					allFriendsNames.add(record.get(0).get("userName").toString());	
+				}
+				
+				for (String name : allFriendsNames) {
+					String playlistName = name.substring(1, name.length()-1) + "-favourites";
+					String getSongsQuery = "MATCH (p:profile {userName: " + name + " }), (pl:playlist {plName: \"" + playlistName + "\" }) \n" +
+							"MATCH (pl)-[:includes]-(s:song) \n" +
+							"RETURN s";
+					songsResult = trans.run(getSongsQuery);
+					List<Record> songsResultRecords = songsResult.list();
+					List<String> songList = new ArrayList<String>();
+					
+					for (Record songsRecord : songsResultRecords) {					    
+						songList.add(songsRecord.get(0).get("songId").toString().replace("\"", ""));						
 					}
-					songsQuery.setdbQueryExecResult(DbQueryExecResult.QUERY_OK);
-					songsQuery.setMessage("OK");
-					songsQuery.setData(friendsSongs);
+					allSongsFriendsLike.put(name.replace("\"", ""), songList);
 				}
-				else {
-					songs.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-					songs.setMessage("User does not follow anyone");
-				}
+				dbQueryStatus = new DbQueryStatus("Retrieved playlists of friends", DbQueryExecResult.QUERY_OK);
+				dbQueryStatus.setData(allSongsFriendsLike);
 			}
-			else {
-				songs.setdbQueryExecResult(DbQueryExecResult.QUERY_ERROR_NOT_FOUND);
-				songs.setMessage("User does not exist");
-			}	
+			session.close();
 		}
-		return songs;
+		return dbQueryStatus;
 	}
 }
